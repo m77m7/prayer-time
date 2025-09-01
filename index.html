@@ -4,14 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>مواقيت الصلاة</title>
-  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <h1>🕌 مواقيت الصلاة</h1>
-    <button onclick="getLocation()">📍 استخدام موقعي الحالي</button>
-    <div id="times" class="times-box"></div>
-  </div>
+  <h1>🕌 مواقيت الصلاة</h1>
+  <button onclick="getLocation()">📍 استخدام موقعي الحالي</button>
+
+  <!-- هنا هيتعرض الجدول -->
+  <div id="times" style="margin-top:20px; font-size:18px;"></div>
+
+  <!-- ربط ملف الجافاسكريبت -->
   <script src="script.js"></script>
 </body>
 </html>
