@@ -10,22 +10,26 @@ function getLocation() {
 function showPosition(position) {
     let lat = position.coords.latitude;
     let lon = position.coords.longitude;
+    console.log("استخدمت موقعي:", lat, lon);
     getPrayerTimes(lat, lon);
 }
 
-// لو المستخدم رفض إذن الموقع → نستخدم مكان افتراضي
 function useDefaultLocation() {
-    // احداثيات القاهرة (غيرها لمكة لو عايز)
     let lat = 30.0444;  
     let lon = 31.2357;
+    console.log("استخدمت الموقع الافتراضي (القاهرة):", lat, lon);
     getPrayerTimes(lat, lon);
 }
 
-// دالة تجيب المواقيت من API
 function getPrayerTimes(lat, lon) {
-    fetch(https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=5)
+    const url = https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=5;
+    console.log("جاري جلب:", url);
+
+    fetch(url)
         .then(response => response.json())
         .then(data => {
+            console.log("البيانات الراجعة:", data);
+
             let t = data.data.timings;
             document.getElementById("times").innerHTML = `
                 <strong>الفجر:</strong> ${t.Fajr} <br>
@@ -35,5 +39,8 @@ function getPrayerTimes(lat, lon) {
                 <strong>العشاء:</strong> ${t.Isha} <br>
             `;
         })
-        .catch(err => console.error(err));
+        .catch(err => {
+            console.error("خطأ أثناء الجلب:", err);
+            document.getElementById("times").innerText = "❌ حصل خطأ في جلب البيانات!";
+        });
 }
