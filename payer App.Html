@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>مواقيت الصلاة</title>
+  <link rel="manifest" href="manifest.json" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f1f5f9;
+      color: #0f172a;
+      direction: rtl;
+    }
+    body.dark { background-color: #0f172a; color: #f1f5f9; }
+    header {
+      padding: 1rem;
+      text-align: center;
+      background-color: #1e293b;
+      color: white;
+    }
+    body.dark header { background-color: #334155; }
+    main { padding: 1rem; }
+    .card {
+      background-color: white;
+      border-radius: 1rem;
+      padding: 1rem;
+      margin: 1rem 0;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    body.dark .card { background-color: #1e293b; color: #f1f5f9; }
+    .actions {
+      display: flex;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+    button {
+      border: none;
+      padding: .5rem 1rem;
+      border-radius: .75rem;
+      cursor: pointer;
+      background-color: #0f172a;
+      color: white;
+    }
+    body.dark button { background-color: #f1f5f9; color: #0f172a; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    td, th { padding: .5rem; border: 1px solid #ccc; text-align: center; }
+    body.dark td, body.dark th { border-color: #475569; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>⏰ مواقيت الصلاة</h1>
+  </header>
+  <main>
+    <div class="actions">
+      <input id="city" placeholder="ادخل المدينة" />
+      <input id="country" placeholder="ادخل الدولة" />
+      <button id="getPrayerTimes">بحث</button>
+      <button id="getLocation">📍 موقعي</button>
+      <button id="toggleTheme">🌙/☀️</button>
+      <button id="toggleLang">EN/AR</button>
+    </div>
+    <div id="loading" style="display:none">جارِ التحميل...</div>
+    <div class="card">
+      <h2>الصلاة القادمة: <span id="nextPrayer">--</span></h2>
+      <p>الوقت المتبقي: <span id="countdown">--</span></p>
+    </div>
+    <div class="card">
+      <h2>مواقيت اليوم</h2>
+      <div id="prayerTimes">التوقيت سيظهر هنا بعد البحث...</div>
+    </div>
+    <div class="card">
+      <button id="getWeek">تحديث الأسبوع</button>
+      <button id="getMonth">عرض الشهر</button>
+      <div id="schedule"></div>
+    </div>
+    <div class="card">
+      <h2>البوصلة (اتجاه القبلة)</h2>
+      <canvas id="qiblaCanvas" width="200" height="200"></canvas>
+    </div>
+    <div class="card">
+      <h2>إعدادات الأذان</h2>
+      <select id="adhanSelect">
+        <option value="adhan_makkah.mp3">مكة</option>
+        <option value="adhan_madina.mp3">المدينة</option>
+        <option value="adhan_cairo.mp3">القاهرة</option>
+      </select>
+      <input type="file" id="customAdhan" accept="audio/mp3" />
+      <input id="iqama" type="number" placeholder="دقائق الإقامة" />
+    </div>
+    <div class="card">
+      <button id="toggleBatterySaver">تفعيل وضع توفير البطارية</button>
+    </div>
+  </main>
+  <audio id="adhanAudio"></audio>
+  <script>
+    const body = document.body;
+    const prayerTimesDiv = document.getElementById("prayerTimes");
+    const nextPrayerSpan = document.getElementById("nextPrayer");
+    const countdownSpan = document.getElementById("countdown");
+    const adhanAudio = document.getElementById("adhanAudio");
+    const loading = document.getElementById("loading");
+    const scheduleDiv = document.getElementById("schedule");
+    let countdownInterval;
+    let batterySaver = false;
+    let method = 5; // الهيئة المصرية
+
+    document.getElementById("toggleTheme").onclick = () => {
+      body.classList.toggle("dark");
+      localStorage.setItem("theme", body.classList.contains("dark") ? "dark" : "light");
+    };
+    document.getElementById("toggleLang").onclick = () => {
+      const current = localStorage.getItem("lang") || "ar";
+      const newLang = current === "ar" ? "en" : "ar";
+      localStorage.setItem("lang", newLang);
+      location.reload();
+    };
+
+    document.getElementById("getPrayerTimes").onclick = () => {
+      const city = document.getElementById("city").value;
+      const country = document.getElementById("country").value;
+      if(city && country){
+        localStorage.setItem("city", city);
+        localStorage.setItem("country", country);
+        fetchPrayerTimes(city, country);
+      }
+    };
+    document.getElementById("getLocation").onclick = () => {
+      if(navigator.geolocation){
+        navigator.geolocation.getCurrentPosition(pos => {
+          fetchPrayerTimesByCoords(pos.coords.latitude, pos.coords.longitude);
+        });
+      }
+    };
+
+    async function fetchPrayerTimes(city, country){
+      loading.style.display = "block";
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const url = `https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&method=${method}&timezone=${tz}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      loading.style.display = "none";
+      showPrayerTimes(data.data);
+    }
+    async function fetchPrayerTimesByCoords(lat, lon){
+      loading.style.display = "block";
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=${method}&timezone=${tz}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      loading.style.display = "none";
+      showPrayerTimes(data.data);
+    }
+
+    function showPrayerTimes(data){
+      const times = data.timings;
+      let html = "<table><tr><th>الصلاة</th><th>الوقت</th></tr>";
+      for(const [name,time] of Object.entries(times)){
+        if(["Fajr","Dhuhr","Asr","Maghrib","Isha"].includes(name)){
+          html += `<tr><td>${name}</td><td>${time}</td></tr>`;
+        }
+      }
+      html += "</table>";
+      prayerTimesDiv.innerHTML = html;
+      updateCountdown(times);
+    }
+
+    function updateCountdown(times){
+      if(countdownInterval) clearInterval(countdownInterval);
+      const now = new Date();
+      const prayerOrder = ["Fajr","Dhuhr","Asr","Maghrib","Isha"];
+      let next = null;
+      for(const p of prayerOrder){
+        const [h,m] = times[p].split(":").map(Number);
+        const prayerTime = new Date();
+        prayerTime.setHours(h,m,0,0);
+        if(prayerTime > now){ next = {name:p,time:prayerTime}; break; }
+      }
+      if(!next){
+        const [h,m] = times["Fajr"].split(":").map(Number);
+        const prayerTime = new Date();
+        prayerTime.setDate(prayerTime.getDate()+1);
+        prayerTime.setHours(h,m,0,0);
+        next = {name:"Fajr",time:prayerTime};
+      }
+      nextPrayerSpan.textContent = next.name;
+      function tick(){
+        const diff = next.time - new Date();
+        if(diff <= 0){
+          clearInterval(countdownInterval);
+          playAdhan();
+        } else {
+          const hrs = Math.floor(diff/3600000);
+          const mins = Math.floor((diff%3600000)/60000);
+          const secs = Math.floor((diff%60000)/1000);
+          countdownSpan.textContent = `${hrs}:${mins}:${secs}`;
+        }
+      }
+      tick();
+      countdownInterval = setInterval(tick, batterySaver?60000:1000);
+    }
+
+    function playAdhan(){
+      const custom = document.getElementById("customAdhan").files[0];
+      if(custom){
+        adhanAudio.src = URL.createObjectURL(custom);
+      } else {
+        adhanAudio.src = document.getElementById("adhanSelect").value;
+      }
+      adhanAudio.play().catch(()=>{
+        if(Notification.permission === "granted"){
+          new Notification("حان وقت الصلاة");
+        }
+      });
+    }
+
+    document.getElementById("toggleBatterySaver").onclick = () => {
+      batterySaver = !batterySaver;
+      alert(batterySaver?"تم تفعيل وضع توفير البطارية":"تم إلغاء وضع توفير البطارية");
+    };
+
+    // ✅ تحديث الأسبوع
+    document.getElementById("getWeek").onclick = async () => {
+      if(navigator.geolocation){
+        navigator.geolocation.getCurrentPosition(async pos => {
+          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const today = new Date();
+          const month = today.getMonth() + 1;
+          const year = today.getFullYear();
+          const url = `https://api.aladhan.com/v1/calendar?latitude=${pos.coords.latitude}&longitude=${pos.coords.longitude}&method=${method}&month=${month}&year=${year}&timezone=${tz}`;
+          const res = await fetch(url);
+          const data = await res.json();
+          const days = data.data.slice(today.getDate()-1, today.getDate()+6); // 7 أيام
+          let html = "<table><tr><th>اليوم</th><th>الفجر</th><th>الظهر</th><th>العصر</th><th>المغرب</th><th>العشاء</th></tr>";
+          days.forEach(d => {
+            html += `<tr>
+              <td>${d.date.gregorian.date}</td>
+              <td>${d.timings.Fajr.split(" ")[0]}</td>
+              <td>${d.timings.Dhuhr.split(" ")[0]}</td>
+              <td>${d.timings.Asr.split(" ")[0]}</td>
+              <td>${d.timings.Maghrib.split(" ")[0]}</td>
+              <td>${d.timings.Isha.split(" ")[0]}</td>
+            </tr>`;
+          });
+          html += "</table>";
+          scheduleDiv.innerHTML = html;
+        });
+      }
+    };
+
+    // ✅ عرض الشهر
+    document.getElementById("getMonth").onclick = async () => {
+      if(navigator.geolocation){
+        navigator.geolocation.getCurrentPosition(async pos => {
+          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const today = new Date();
+          const month = today.getMonth() + 1;
+          const year = today.getFullYear();
+          const url = `https://api.aladhan.com/v1/calendar?latitude=${pos.coords.latitude}&longitude=${pos.coords.longitude}&method=${method}&month=${month}&year=${year}&timezone=${tz}`;
+          const res = await fetch(url);
+          const data = await res.json();
+          let html = "<table><tr><th>اليوم</th><th>الفجر</th><th>الظهر</th><th>العصر</th><th>المغرب</th><th>العشاء</th></tr>";
+          data.data.forEach(d => {
+            html += `<tr>
+              <td>${d.date.gregorian.date}</td>
+              <td>${d.timings.Fajr.split(" ")[0]}</td>
+              <td>${d.timings.Dhuhr.split(" ")[0]}</td>
+              <td>${d.timings.Asr.split(" ")[0]}</td>
+              <td>${d.timings.Maghrib.split(" ")[0]}</td>
+              <td>${d.timings.Isha.split(" ")[0]}</td>
+            </tr>`;
+          });
+          html += "</table>";
+          scheduleDiv.innerHTML = html;
+        });
+      }
+    };
+
+    window.onload = () => {
+      if(localStorage.getItem("theme") === "dark") body.classList.add("dark");
+      document.getElementById("city").value = localStorage.getItem("city")||"";
+      document.getElementById("country").value = localStorage.getItem("country")||"";
+      if(Notification.permission !== "granted"){
+        Notification.requestPermission();
+      }
+    };
+
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.register("sw.js");
+    }
+  </script>
+</body>
+</html>
